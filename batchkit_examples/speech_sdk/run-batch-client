@@ -6,12 +6,14 @@ import json
 import sys
 import os
 import glob
+import threading
 from argparse import Namespace
 from typing import List
 
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
 
+from batchkit import logger
 from batchkit import client
 from batchkit.utils import create_dir, write_json_file_atomic
 from batchkit_examples.speech_sdk.parser import parse_cmdline
@@ -21,14 +23,31 @@ from batchkit_examples.speech_sdk.multilanguage.unified_run_summarizer import Un
 from batchkit_examples.speech_sdk.multilanguage.stage import MultilanguageBatchStage
 
 
+def timeout_killer(timeout_seconds, done_event):
+    finished = done_event.wait(timeout_seconds)
+    if finished:
+        logger.info("[Batchkit killer] all tasks completed within the timeout period.")
+    else:
+        logger.error("[Batchkit killer] timeout reached, terminating processes.")
+        os._exit(1)
+
+
 # Main entry point
 if __name__ == '__main__':
     args: Namespace = parse_cmdline()
+    done_event = threading.Event()
+
+    if args.timeout is not None:
+        timeout = args.timeout
+        timeout_tread = threading.Thread(target=timeout_killer, args=(timeout, done_event))
+        timeout_tread.daemon = True
+        timeout_tread.start()
 
     # Single-language.
     if len(args.language) == 1:
         args.language = args.language[0]
         client.run(args, SpeechSDKBatchConfig)
+        done_event.set()
 
     # Multi-language.
     # This is Alpha proof-of-concept code and will not be factored like this here.
@@ -132,5 +151,6 @@ if __name__ == '__main__':
         run_summarizer.finish_autoloop()
         run_summarizer.join()
         run_summarizer.iterate()  # final iteration.
+        done_event.set()
 
     exit(0)
