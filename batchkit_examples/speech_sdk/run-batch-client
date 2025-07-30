@@ -37,11 +37,11 @@ if __name__ == '__main__':
     args: Namespace = parse_cmdline()
     done_event = threading.Event()
 
-    if args.timeout is not None:
+    if args.timeout is not None and args.timeout > 0:
         timeout = args.timeout
-        timeout_tread = threading.Thread(target=timeout_killer, args=(timeout, done_event))
-        timeout_tread.daemon = True
-        timeout_tread.start()
+        timeout_thread = threading.Thread(target=timeout_killer, args=(timeout, done_event))
+        timeout_thread.daemon = True
+        timeout_thread.start()
 
     # Single-language.
     if len(args.language) == 1:

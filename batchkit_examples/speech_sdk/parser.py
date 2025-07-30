@@ -138,6 +138,12 @@ def create_parser():
         help="Interval in seconds to re-log debug information about the batchkit's orchestration components. "
              "Useful for debugging. The default value of 0 means this information is not logged. "
     )
+    parser.add_argument(
+        '-timeout', '--time-out',
+        default=0, type=check_positive,
+        help="Timeout in seconds for the batch processing. "
+             "If the processing takes longer than this, it will be terminated."
+    )
     return parser
 
 
