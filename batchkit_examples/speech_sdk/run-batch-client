@@ -13,7 +13,7 @@ from typing import List
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..'))
 
-from batchkit import logger
+import logging
 from batchkit import client
 from batchkit.utils import create_dir, write_json_file_atomic
 from batchkit_examples.speech_sdk.parser import parse_cmdline
@@ -22,6 +22,7 @@ from batchkit_examples.speech_sdk.lang_id.batch_config import LangIdBatchConfig
 from batchkit_examples.speech_sdk.multilanguage.unified_run_summarizer import UnifiedRunSummarizer
 from batchkit_examples.speech_sdk.multilanguage.stage import MultilanguageBatchStage
 
+logger = logging.getLogger("batch")
 
 def timeout_killer(timeout_seconds, done_event):
     finished = done_event.wait(timeout_seconds)
