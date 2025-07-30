@@ -38,6 +38,7 @@ if __name__ == '__main__':
     done_event = threading.Event()
 
     if args.timeout is not None and args.timeout > 0:
+        logger.info(f"[Batchkit killer] timeout is set to {args.timeout} seconds.")
         timeout = args.timeout
         timeout_thread = threading.Thread(target=timeout_killer, args=(timeout, done_event))
         timeout_thread.daemon = True

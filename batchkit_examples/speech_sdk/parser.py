@@ -139,7 +139,7 @@ def create_parser():
              "Useful for debugging. The default value of 0 means this information is not logged. "
     )
     parser.add_argument(
-        '-timeout', '--time-out',
+        '-timeout', '--timeout',
         default=0, type=check_positive,
         help="Timeout in seconds for the batch processing. "
              "If the processing takes longer than this, it will be terminated."
