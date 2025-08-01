@@ -423,12 +423,11 @@ class FileRecognizer:
 
         source_language_recognizer.start_continuous_recognition()
 
-        # Wait for the done_event almost indefinitely
-        timeout = 1e9
+        # Wait for the done_event with a timeout of 30 seconds
+        timeout = 300  # seconds
 
-        while True:
-            if done_event.wait(timeout=timeout):
-                break
+        if not done_event.wait(timeout=timeout):
+            raise TimeoutError(f"Segmentation process exceeded the timeout of {timeout} seconds.")
 
         source_language_recognizer.stop_continuous_recognition()
 
