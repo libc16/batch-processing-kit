@@ -424,10 +424,18 @@ class FileRecognizer:
         source_language_recognizer.start_continuous_recognition()
 
         # Wait for the done_event with a timeout of 30 seconds
-        timeout = 300  # seconds
+        timeout = self.request.lid_timeout  # seconds
 
-        if not done_event.wait(timeout=timeout):
-            raise TimeoutError(f"Segmentation process exceeded the timeout of {timeout} seconds.")
+        if timeout > 0:
+            # If lid_timeout is set, wait for the done_event with a timeout
+            self._log_event_queue.debug("Lid thread timeout is set to {0} seconds".format(timeout))
+            if not done_event.wait(timeout=timeout):
+                raise TimeoutError(f"Segmentation process exceeded the timeout of {timeout} seconds.")
+        else:
+            self._log_event_queue.debug("Lid thread timeout isn't set, will wait indefinitely.")
+            while True:
+                if done_event.wait(timeout=timeout):
+                    break
 
         source_language_recognizer.stop_continuous_recognition()
 
