@@ -21,7 +21,8 @@ class SpeechSDKBatchRequest(BatchRequest):
 
     def __init__(self, files: List[str],
                  language: str, diarization: str, nbest: int, profanity: str,
-                 allow_resume: bool, enable_sentiment: bool, combine_results: bool = False):
+                 allow_resume: bool, enable_sentiment: bool, combine_results: bool = False,
+                 recognize_timeout: int = 0):
         super().__init__(files, combine_results)
         # TODO: We need to support all the options available on the
         #       Azure Cognitive Services on-cloud batch service.
@@ -31,6 +32,7 @@ class SpeechSDKBatchRequest(BatchRequest):
         self.profanity = profanity
         self.allow_resume = allow_resume
         self.enable_sentiment = enable_sentiment
+        self.recognize_timeout = recognize_timeout
 
     def make_work_items(self, output_dir: str,
                         cache_search_dirs: List[str],
@@ -47,6 +49,7 @@ class SpeechSDKBatchRequest(BatchRequest):
                 log_dir,
                 self.allow_resume,
                 self.enable_sentiment,
+                self.recognize_timeout
             )
             for f in self.files
         ]
@@ -60,7 +63,7 @@ class SpeechSDKBatchRequest(BatchRequest):
             if arg not in json:
                 raise BadRequestError("Missing '{arg}' argument (string) in request body".format(arg=arg))
         # Integer args.
-        for arg in ['nbest']:
+        for arg in ['nbest', 'recognize_timeout']:
             if not isinstance(json[arg], int):
                 raise BadRequestError("Request body argument '{0}' was not an integer: '{1}'".format(arg, json[arg]))
         # Boolean args.
@@ -87,6 +90,7 @@ class SpeechSDKBatchRequest(BatchRequest):
             config.allow_resume,
             config.sentiment,
             config.combine_results,
+            config.recognize_timeout
         )
 
     @staticmethod

@@ -15,7 +15,8 @@ class SpeechSDKBatchConfig(BatchConfig):
                  profanity: str,
                  sentiment: bool,
                  allow_resume: bool,
-                 combine_results: bool):
+                 combine_results: bool,
+                 recognize_timeout: int = 0):
         super().__init__()
         self.language: str = language
         self.nbest = nbest
@@ -24,6 +25,7 @@ class SpeechSDKBatchConfig(BatchConfig):
         self.sentiment = sentiment
         self.allow_resume = allow_resume
         self.combine_results = combine_results
+        self.recognize_timeout = recognize_timeout
 
     @staticmethod
     def from_args(args: Namespace):
@@ -35,4 +37,5 @@ class SpeechSDKBatchConfig(BatchConfig):
             sentiment=args.enable_sentiment,
             allow_resume=args.allow_resume,
             combine_results=args.store_combined_json,
+            recognize_timeout=args.recognize_timeout
         )

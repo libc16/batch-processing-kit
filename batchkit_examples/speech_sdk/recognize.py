@@ -115,6 +115,7 @@ class FileRecognizer:
         self._cache_search_dirs = list(request.cache_search_dirs)
         self._log_folder = request.log_dir
         self._allow_resume = request.allow_resume
+        self._recognize_timeout = request.recognize_timeout
         self._throttle = str(round(rtf * 100))
 
     def recognize(self, cancellation_token: multiprocessing.Event) -> SpeechSDKWorkItemResult:
@@ -460,10 +461,22 @@ class FileRecognizer:
         else:
             done_event.set()
 
+        # recognize timeout = 0 means no timeout, otherwise it is the maximum time to wait for recognition to complete.
+        remaining_recognize_timeout = self._recognize_timeout
+        self._log_event_queue.log(LogLevel.INFO, f"Recognize timeout is set? {self._recognize_timeout > 0}. Remaining timeout: {remaining_recognize_timeout} seconds.")
+
         # Wait for the done event to be set, but check if it's because cancellation was triggered.
         # Add timeout to be safe from extremely rare but possible Speech SDK deadlock (workaround).
         # Timeout duration is a function of how much audio is left.
         while True:
+            if self._recognize_timeout > 0 and not done_event.is_set() and not cancellation_token.is_set() and time.time() - start_time >= remaining_recognize_timeout:
+                # If we are here, it means that the Speech SDK has not made any forward progress
+                # for a long time, and we need to stop waiting.
+                raise TimeoutError(f"Speech recognize process exceeded the timeout of {self._recognize_timeout} seconds.")
+
+            if self._recognize_timeout > 0:
+                self._log_event_queue.log(LogLevel.INFO, f"Remaining recognize timeout is {remaining_recognize_timeout} seconds.")
+            
             last_watermark: float = last_processed_offset_secs  # Race is okay.
             audio_remaining: float = audio_duration - last_watermark
             timeout: float
@@ -471,9 +484,12 @@ class FileRecognizer:
             if self._diarization == "None":
                 # Generous heuristic.
                 timeout = max(SPEECHSDK_RESULT_TIMEOUT, audio_remaining / (float(self._throttle)/100.0))
+                timeout = timeout if remaining_recognize_timeout == 0 else min(timeout, remaining_recognize_timeout)
+                remaining_recognize_timeout -= timeout
             else:
-                timeout = 1e9
+                timeout = 1e9 if self._recognize_timeout == 0 else remaining_recognize_timeout
 
+            self._log_event_queue.log(LogLevel.INFO, f"Waiting event done for {timeout} seconds.")
             if done_event.wait(timeout=timeout):
                 break
             if last_processed_offset_secs == last_watermark:
