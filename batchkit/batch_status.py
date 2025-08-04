@@ -23,7 +23,6 @@ class BatchStatusEnum(Enum):
     running = 1
     done = 2
     deleted = 3
-    timeout = 4
 
 
 class BatchStatus(object):
