@@ -250,7 +250,7 @@ class FileRecognizer:
             self._log_event_queue.debug("Starting language segmentation on file: {0}".format(self.request.filepath))
 
             # Add retry logic for _segment function in case of timeout
-            max_retries = 5
+            max_retries = max(1, self.request.recognize_retry) # Ensure at least one attempt
             retry_count = 0
             lang_segments = None
 

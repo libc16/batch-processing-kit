@@ -145,6 +145,12 @@ def create_parser():
              "The default value of 0 means no timeout."
     )
     parser.add_argument(
+        '-recognize_retry', '--recognize-retry',
+        default=0, type=check_positive,
+        help="The maximum number of retries for speech-to-text (STT) to complete for each audio file. "
+             "The default value of 0 means no retries."
+    )
+    parser.add_argument(
         '-debug_loop_interval', '--debug-loop-interval',
         default=0, type=check_positive,
         help="Interval in seconds to re-log debug information about the batchkit's orchestration components. "
