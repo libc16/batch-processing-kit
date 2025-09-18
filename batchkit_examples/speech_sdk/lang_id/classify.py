@@ -249,7 +249,28 @@ class FileRecognizer:
             self._validate_file_format(self._converted_audio_file)
             self._log_event_queue.debug("Starting language segmentation on file: {0}".format(self.request.filepath))
 
-            lang_segments = self._segment(self._converted_audio_file, cancellation_token)
+            # Add retry logic for _segment function in case of timeout
+            max_retries = 5
+            retry_count = 0
+            lang_segments = None
+
+            while retry_count < max_retries:
+                try:
+                    lang_segments = self._segment(self._converted_audio_file, cancellation_token)
+                    self._log_event_queue.info("Successfully segmented file {0} after {1} attempt(s)".format(self.request.filepath, retry_count + 1))
+                    break  # Success, exit retry loop
+                except TimeoutError as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        self._log_event_queue.warning(
+                            f"Timeout occurred for file {self.request.filepath} (attempt {retry_count}/{max_retries}). Retrying..."
+                        )
+                        time.sleep(1)  # Brief delay before retry
+                    else:
+                        self._log_event_queue.error(
+                            f"Segmentation failed after {max_retries} attempts due to timeout for file {self.request.filepath}"
+                        )
+                        raise e
 
             # Corner case: when there is only a single language segment of language "unknown", the LID
             # backend has absolutely no idea how to even make a homogeneous language estimate. In this case
