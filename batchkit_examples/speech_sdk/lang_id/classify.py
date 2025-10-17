@@ -5,6 +5,7 @@ import os
 import time
 import traceback
 import multiprocessing
+import concurrent.futures
 from multiprocessing import current_process
 from functools import wraps
 from typing import List, Optional
@@ -12,7 +13,7 @@ import wave
 import grpc
 
 from batchkit.logger import LogEventQueue, LogLevel
-from batchkit.utils import sha256_checksum, write_json_file_atomic, \
+from batchkit.utils import sha256_checksum, write_json_file_atomic, UserTimeoutReachedException, \
     EndpointDownError, FailedRecognitionError, tee_to_pipe_decorator, CancellationTokenException, create_dir
 from batchkit.constants import RECOGNIZER_SCOPE_RETRIES
 from batchkit_examples.speech_sdk.audio import init_gstreamer, convert_audio, WavFileReaderCallback, \
@@ -251,7 +252,53 @@ class FileRecognizer:
             self._validate_file_format(self._converted_audio_file)
             self._log_event_queue.debug("Starting language segmentation on file: {0}".format(self.request.filepath))
 
-            lang_segments = self._segment(self._converted_audio_file, cancellation_token)
+            # Add retry logic for _segment function in case of timeout
+            max_retries = max(1, self.request.recognize_retry) # Ensure at least one attempt
+            retry_count = 0
+            lang_segments = None
+            while retry_count < max_retries:
+                local_cancellation_token = multiprocessing.Event()
+
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(self._segment, self._converted_audio_file, local_cancellation_token, self.request.lid_timeout if self.request.lid_timeout > 0 else None)
+                    try:
+                        lang_segments = future.result(timeout=self.request.lid_timeout if self.request.lid_timeout > 0 else None)
+                        self._log_event_queue.info("Successfully segmented file {0} after {1} attempt(s)".format(self.request.filepath, retry_count + 1))
+                        if local_cancellation_token.is_set():
+                            cancellation_token.set()  # Propagate cancellation if it occurred in the segmenting thread
+                        break  # If successful, exit the retry loop
+                    except concurrent.futures.TimeoutError:
+                        retry_count += 1
+                        local_cancellation_token.set()
+                        future.cancel()
+                        if retry_count < max_retries:
+                            self._log_event_queue.warning(
+                                "Language segmentation timed out after {0}s on file: {1} on process: {2} "
+                                "targeting endpoint: {3}. Retrying {4}/{5}...".format(
+                                    self.request.lid_timeout,
+                                    self.request.filepath,
+                                    current_process().name,
+                                    self._host,
+                                    retry_count,
+                                    max_retries
+                                ))
+                        else:
+                            self._log_event_queue.error(
+                                "Language segmentation failed after {0}s on file: {1} on process: {2} "
+                                "targeting endpoint: {3}. (attempts: {4})".format(
+                                    self.request.lid_timeout,
+                                    self.request.filepath,
+                                    current_process().name,
+                                    self._host,
+                                    retry_count
+                                ))
+                            raise UserTimeoutReachedException(
+                                "Language segmentation timed out after {0}s on file: {1} on process: {2} "
+                                "targeting endpoint: {3}.".format(
+                                    self.request.lid_timeout,
+                                    self.request.filepath,
+                                    current_process().name,
+                                    self._host))
 
             # Corner case: when there is only a single language segment of language "unknown", the LID
             # backend has absolutely no idea how to even make a homogeneous language estimate. In this case
@@ -328,13 +375,28 @@ class FileRecognizer:
         )
         self._log_event_queue.info("Atomically wrote file {0}".format(seg_summ_file))
         return self._audio_duration
+    
+    def calculate_current_timeout(self, start_time: float, total_timeout: Optional[float]) -> Optional[float]:
+        if total_timeout is None or total_timeout <= 0:
+            return None
 
-    def _segment(self, audio_file: str, cancellation_token: multiprocessing.Event):
+        current_time = time.time()
+        if (current_time - start_time) >= total_timeout:
+            return 0
+        else:
+            return total_timeout - (current_time - start_time)
+
+    def _segment(self, audio_file: str, cancellation_token: multiprocessing.Event, timeout_seconds: Optional[float] = None):
         channel = grpc.insecure_channel(self._host)
         stub = LanguageIdStub(channel)
         segments = []
+        start_time = time.time()
 
-        for resp in stub.Identify(self._generate_messages(audio_file, cancellation_token)):
+        for resp in stub.Identify(self._generate_messages(audio_file, cancellation_token, self.calculate_current_timeout(start_time, timeout_seconds))):
+            remained_timeout = self.calculate_current_timeout(start_time, timeout_seconds)
+            if remained_timeout is not None and remained_timeout <= 0:
+                raise UserTimeoutReachedException("{0}s timeout reached for file {1} LID segmentation.".format(timeout_seconds, audio_file))
+
             if resp.WhichOneof('message') == 'final_result':
                 response: FinalResultMessage = resp.final_result
                 self._log_event_queue.debug("Segment identified for file {0}: {1}".format(audio_file, response))
@@ -386,8 +448,10 @@ class FileRecognizer:
             if sampwidth != 2:
                 raise InvalidAudioFormatError("LID currently only compatible with 16-bit samples.")
 
-    def _generate_messages(self, audio_file: str, cancellation_token: multiprocessing.Event):
+    def _generate_messages(self, audio_file: str, cancellation_token: multiprocessing.Event, remaining_timeout: float):
         self._validate_file_format(audio_file)
+        start_time = time.time()
+        no_timeout_limit = remaining_timeout is None
 
         # Config message first.
         message = LIDRequestMessage()
@@ -406,17 +470,28 @@ class FileRecognizer:
             yield message
 
             # Any number of audio payload messages follow the config message.
-            while True:
-                # If request has been canceled by framework, we will simply stop producing
-                # the request message stream and allow the response reader to throw the CancellationTokenException.
-                if cancellation_token.is_set():
-                    break
-                b = fd.readframes(2048)
-                if not b:
-                    break
-                message.audio_payload = b
-                yield message
-
+            if no_timeout_limit:
+                while True:
+                    # If request has been canceled by framework, we will simply stop producing
+                    # the request message stream and allow the response reader to throw the CancellationTokenException.
+                    if cancellation_token.is_set():
+                        break
+                    b = fd.readframes(2048)
+                    if not b:
+                        break
+                    message.audio_payload = b
+                    yield message
+            else:
+                while (time.time() - start_time) < remaining_timeout:
+                    # If request has been canceled by framework, we will simply stop producing
+                    # the request message stream and allow the response reader to throw the CancellationTokenException.
+                    if cancellation_token.is_set():
+                        break
+                    b = fd.readframes(2048)
+                    if not b:
+                        break
+                    message.audio_payload = b
+                    yield message
     def get_cached_result(self, audio_file, dirs: List[str]):
         """
         Check output folder for a matching JSON file. If found, make sure that sha256 hash of the audio file matches

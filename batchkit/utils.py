@@ -74,6 +74,14 @@ class CancellationTokenException(Exception):
     pass
 
 
+class UserTimeoutReachedException(Exception):
+    """
+    Raised when recognizer is told to stop a recognition request by
+    user timeout.
+    """
+    pass
+
+
 def sha256_checksum(filename, block_size=65536):
     """
     Compute a sha256 checksum of a file

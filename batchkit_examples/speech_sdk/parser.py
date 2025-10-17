@@ -138,6 +138,18 @@ def create_parser():
         help="Interval in seconds to re-log debug information about the batchkit's orchestration components. "
              "Useful for debugging. The default value of 0 means this information is not logged. "
     )
+    parser.add_argument(
+        '-lid_timeout', '--lid-timeout',
+        default=0, type=check_positive,
+        help="The maximum duration to wait for language identification (LID) to complete for each audio file. "
+             "The default value of 0 means no timeout."
+    )
+    parser.add_argument(
+        '-recognize_retry', '--recognize-retry',
+        default=0, type=check_positive,
+        help="The maximum number of retries for speech-to-text (STT) to complete for each audio file. "
+             "The default value of 0 means no retries."
+    )
     return parser
 
 
