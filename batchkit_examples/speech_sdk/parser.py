@@ -145,9 +145,15 @@ def create_parser():
              "The default value of 0 means no timeout."
     )
     parser.add_argument(
+        '-recognize_timeout', '--recognize-timeout',
+        default=0, type=check_positive,
+        help="The maximum duration to wait for speech-to-text (STT) to complete for each audio file. "
+             "The default value of 0 means no timeout."
+    )
+    parser.add_argument(
         '-recognize_retry', '--recognize-retry',
         default=0, type=check_positive,
-        help="The maximum number of retries for speech-to-text (STT) to complete for each audio file. "
+        help="The maximum number of retries for STT and LID to complete for each audio file. "
              "The default value of 0 means no retries."
     )
     return parser
